@@ -22,9 +22,10 @@ module "vm_module" {
   vmname = "myvm001"
 }
 
+
 #create s3 buckets
 resource "aws_s3_bucket" "prod_web" {
-  bucket      = "2randombucketname22222"
+  bucket      = "2randombucketname222222"
   acl         = "private"
 
   provisioner "local-exec" {
@@ -57,6 +58,19 @@ resource "aws_iam_role" "lambda_role" {
   assume_role_policy = "${file("iam/lambda-assume-policy.json")}"
 }
 
+#iam policy & assume role for glue
+
+resource "aws_iam_role_policy" "glue_policy" {
+  name   = "glue_policy"
+  role   = aws_iam_role.glue_role.id
+  policy = "${file("iam/lambda-policy.json")}"
+}
+
+resource "aws_iam_role" "glue_role" {
+  name               = "glue-role"
+  assume_role_policy = "${file("iam/glue-assume-policy.json")}"
+}
+
 #lambda function to do apipull 
 resource "aws_lambda_function" "test_lambda" {
   filename         = "${local.lambda_zip_location}"
@@ -74,13 +88,62 @@ resource "aws_lambda_function" "test_lambda" {
 data "archive_file" "lambdaapipull" {
   type        = "zip"
   source_file = "lambdaapipull.py"
-  output_path = "${local.lambda_zip_location}"
+  output_path = local.lambda_zip_location
 }
 
 #have to make sure output_path & filename match
 #to maintain use locals & use same value twice
 locals {
   lambda_zip_location = "outputs/lamdaapipull.zip"
+}
+
+resource "aws_glue_classifier" "import-json" {
+  name = "import-json-class"
+
+  json_classifier {
+    json_path = "s3://2randombucketname22222/"
+  }
+}
+
+resource "aws_glue_crawler" "import-json-crawler" {
+  database_name = aws_s3_bucket.prod_web.id
+  name          = "import-json-crawler"
+  role          = aws_iam_role.glue_role.arn
+  #classifiers   = aws_glue_classifier.import-json.id
+
+  s3_target {
+    path = "s3://2randombucketname22222/"
+  }
+}
+
+resource "aws_glue_job" "import-json-job" {
+  name     = "import-json-job"
+  role_arn = "${aws_iam_role.glue_role.arn}"
+
+  command {
+    script_location = "s3://aws-glue-scripts-468471399855-us-east-1/cloud_user"
+  }
+}
+
+resource "aws_glue_connection" "import-json" {
+  connection_properties = {
+    JDBC_CONNECTION_URL = "jdbc:redshift://tf-redshift-cluster.crg5urli0qj7.us-east-1.redshift.amazonaws.com:5439/mydb"
+    PASSWORD            = "Mustbe8characters"
+    USERNAME            = "randomname"
+  }
+
+  name = "import-json-connection"
+
+}
+
+resource "aws_glue_trigger" "myjsonjob" {
+  name     = "myjob"
+  schedule = "cron(15 12 * * ? *)"
+  type     = "SCHEDULED"
+
+  actions {
+    job_name = "${aws_glue_job.import-json-job.name}"
+  }
 }
 
 #redshift cluster creation 
@@ -91,6 +154,7 @@ resource "aws_redshift_cluster" "default" {
   master_password    = "Mustbe8characters"
   node_type          = "dc1.large"
   cluster_type       = "single-node"
+  final_snapshot_identifier = "false" 
 }
 
 #we can replicate 1 per az in our region 
