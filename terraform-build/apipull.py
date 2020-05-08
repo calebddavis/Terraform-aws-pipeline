@@ -33,7 +33,7 @@ while counter != 1:
     #json.jsondecoder(*,)
     #file just to veiw
     
-    with open('/Users/Caleb/Bigdatagit/Terraform-aws/Terraform-ansible-aws/Terraformmain/terraform-build/data.json', 'a') as f:
+    with open('/Users/Caleb/Bigdatagit/Terraform-aws-pipeline/terraform-build/data.json', 'a') as f:
         for data in datalst:
             f.write("\n")
             json.dump(data, f, ensure_ascii='utf-8')
